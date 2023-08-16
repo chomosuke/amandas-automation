@@ -73,11 +73,12 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
         }
 
         count += 1;
-        if (i - D as i64 / 2).abs() < 3 && (j - D as i64 / 2).abs() < 3 {
+        // center += 10 - (i - D as i64 / 2).abs() - (j - D as i64 / 2).abs();
+        if (i - D as i64 / 2).abs() < 2 && (j - D as i64 / 2).abs() < 2 {
             center += 1;
         }
     }
-    (count, center)
+    (count, center as usize)
 }
 
 const D: usize = 21;
@@ -96,8 +97,8 @@ fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
 
 fn main() {
     // let mut sc = Scanner::new(stdin());
-    let gen_size = 3200;
-    let children_size = 6;
+    // let gen_size = 5000;
+    let children_size = 5;
     let probability = 0.001;
     let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
     // let l_gen_size = 1000;
@@ -108,7 +109,7 @@ fn main() {
     if !Path::new(saved).exists() {
         let mut rng = thread_rng();
         let grids = Arc::new(
-            (0..gen_size)
+            (0..100)
                 .map(|_| {
                     let g = (0..D)
                         .map(|i| {
@@ -177,8 +178,11 @@ fn main() {
         // let dist = if l { l_dist } else { dist };
         // println!("{}", dist.sample(&mut thread_rng()));
 
+        let gen_size = grids[0].0.0 / 6;
+        let gen_size = gen_size.max(100);
+
         // generate the children
-        let num_thread = 16;
+        let num_thread = 8;
         let handles = (0..num_thread)
             .map(|i| {
                 let grids = Arc::clone(&grids);
@@ -211,6 +215,7 @@ fn main() {
             .collect::<Vec<_>>();
 
         let mut children = Vec::clone(&grids);
+        // let mut children = Vec::new();
         for h in handles {
             children.append(&mut h.join().unwrap());
         }
