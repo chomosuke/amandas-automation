@@ -3,7 +3,8 @@
     dead_code,
     clippy::needless_range_loop,
     unused_labels,
-    clippy::comparison_chain
+    clippy::comparison_chain,
+    clippy::type_complexity,
 )]
 use std::{
     cmp::{max, min, Ordering},
@@ -14,7 +15,7 @@ use std::{
     mem::{self, swap},
     ops::Deref,
     sync::{Arc, Mutex},
-    thread, usize,
+    thread, usize, path::Path,
 };
 
 use rand::{distributions::Bernoulli, random, thread_rng, Rng};
@@ -80,56 +81,90 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
 
 const D: usize = 21;
 
+fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
+    let mut str = format!("{} {}", grid.0 .0, grid.0 .1).into_bytes();
+    for row in &grid.1 {
+        str.push(b'\n');
+        for cell in row {
+            str.push(cell + b'0');
+        }
+    }
+    str.push(b'\n');
+    String::from_utf8(str).unwrap()
+}
+
 fn main() {
     // let mut sc = Scanner::new(stdin());
     let gen_size = 100; //sc.next::<usize>();
     let children_size = 100; //sc.next::<usize>();
     let probability = 0.01; //sc.next::<f64>();
     let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
-    let mut rng = thread_rng();
-    let mut grids = Arc::new(
-        (0..gen_size)
-            .map(|_| {
-                let g = (0..D)
-                    .map(|i| {
-                        (0..D)
-                            .map(|j| {
-                                let j = if j > D / 2 {
-                                    -rng.gen_range(0..=1)
-                                } else if j < D / 2 {
-                                    rng.gen_range(0..=1)
-                                } else {
-                                    0
-                                };
-                                let i = if i > D / 2 {
-                                    -rng.gen_range(0..=1)
-                                } else if i < D / 2 {
-                                    rng.gen_range(0..=1)
-                                } else {
-                                    0
-                                };
+    let saved = "saved.txt";
+    if !Path::new(saved).exists() {
+        let mut rng = thread_rng();
+        let grids = Arc::new(
+            (0..gen_size)
+                .map(|_| {
+                    let g = (0..D)
+                        .map(|i| {
+                            (0..D)
+                                .map(|j| {
+                                    let j = if j > D / 2 {
+                                        -rng.gen_range(0..=1)
+                                    } else if j < D / 2 {
+                                        rng.gen_range(0..=1)
+                                    } else {
+                                        0
+                                    };
+                                    let i = if i > D / 2 {
+                                        -rng.gen_range(0..=1)
+                                    } else if i < D / 2 {
+                                        rng.gen_range(0..=1)
+                                    } else {
+                                        0
+                                    };
 
-                                match (i, j) {
-                                    (0, 0) => 0,
-                                    (0, 1) => 1,
-                                    (1, 1) => 2,
-                                    (1, 0) => 3,
-                                    (1, -1) => 4,
-                                    (0, -1) => 5,
-                                    (-1, -1) => 6,
-                                    (-1, 0) => 7,
-                                    (-1, 1) => 8,
-                                    _ => panic!(),
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                (simulate(g.clone()), g)
-            })
-            .collect::<Vec<_>>(),
-    );
+                                    match (i, j) {
+                                        (0, 0) => 0,
+                                        (0, 1) => 1,
+                                        (1, 1) => 2,
+                                        (1, 0) => 3,
+                                        (1, -1) => 4,
+                                        (0, -1) => 5,
+                                        (-1, -1) => 6,
+                                        (-1, 0) => 7,
+                                        (-1, 1) => 8,
+                                        _ => panic!(),
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>();
+                    (simulate(g.clone()), g)
+                })
+                .collect::<Vec<_>>(),
+        );
+        fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
+    }
+    let grids = fs::read_to_string(saved).unwrap();
+    let mut grids = grids.split('\n').collect::<Vec<_>>();
+    grids.pop();
+    let grids: Vec<((usize, usize), Vec<Vec<u8>>)> = grids
+        .chunks(22)
+        .map(|ls| {
+            let mut s = ls[0].split(' ');
+            let n = s.next().unwrap().parse().unwrap();
+            let c = s.next().unwrap().parse().unwrap();
+            let grid = ls[1..22]
+                .iter()
+                .map(|l| l.as_bytes().iter().map(|&c| c - b'0').collect())
+                .collect();
+            ((n, c), grid)
+        })
+        .collect();
+    let mut grids = Arc::new(grids);
 
+    let mut count = 0;
     loop {
         // generate the children
         let num_thread = 16;
@@ -170,19 +205,12 @@ fn main() {
 
         grids = children.into();
 
-        println!("{}", grids[0].0 .0);
-        for row in &(grids[0].1) {
-            for cell in row {
-                print!("{cell}");
-            }
-            println!();
-        }
-        println!("{}", grids[grids.len() - 1].0 .0);
-        for row in &(grids[grids.len() - 1].1) {
-            for cell in row {
-                print!("{cell}");
-            }
-            println!();
+        print!("{}", to_string(&grids[0]));
+        print!("{}", to_string(&grids[grids.len() - 1]));
+
+        count += 1;
+        if count % 50 == 0 {
+            fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
         }
     }
 }
