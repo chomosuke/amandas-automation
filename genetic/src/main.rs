@@ -4,7 +4,7 @@
     clippy::needless_range_loop,
     unused_labels,
     clippy::comparison_chain,
-    clippy::type_complexity,
+    clippy::type_complexity
 )]
 use std::{
     cmp::{max, min, Ordering},
@@ -14,8 +14,9 @@ use std::{
     iter,
     mem::{self, swap},
     ops::Deref,
+    path::Path,
     sync::{Arc, Mutex},
-    thread, usize, path::Path,
+    thread, usize,
 };
 
 use rand::{distributions::Bernoulli, random, thread_rng, Rng};
@@ -72,7 +73,7 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
         }
 
         count += 1;
-        if i == D as i64 / 2 && j == D as i64 / 2 {
+        if (i - D as i64 / 2).abs() < 3 && (j - D as i64 / 2).abs() < 3 {
             center += 1;
         }
     }
@@ -95,10 +96,14 @@ fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
 
 fn main() {
     // let mut sc = Scanner::new(stdin());
-    let gen_size = 100; //sc.next::<usize>();
-    let children_size = 100; //sc.next::<usize>();
-    let probability = 0.01; //sc.next::<f64>();
+    let gen_size = 3200;
+    let children_size = 6;
+    let probability = 0.001;
     let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
+    // let l_gen_size = 1000;
+    // let l_children_size = 10;
+    // let l_probability = 0.01;
+    // let l_dist = Binomial::new(D as u64 * D as u64, l_probability).unwrap();
     let saved = "saved.txt";
     if !Path::new(saved).exists() {
         let mut rng = thread_rng();
@@ -166,6 +171,12 @@ fn main() {
 
     let mut count = 0;
     loop {
+        // let l = (count / 100) % 2 == 0;
+        // let children_size = if l { l_children_size } else { children_size };
+        // let gen_size = if l { l_gen_size } else { gen_size };
+        // let dist = if l { l_dist } else { dist };
+        // println!("{}", dist.sample(&mut thread_rng()));
+
         // generate the children
         let num_thread = 16;
         let handles = (0..num_thread)
@@ -174,16 +185,22 @@ fn main() {
                 thread::spawn(move || {
                     let mut rng = thread_rng();
                     let mut children = Vec::with_capacity(children_size * grids.len() / num_thread);
-                    for (_, grid) in
-                        &grids[i * (grids.len() / num_thread)..(i + 1) * (grids.len() / num_thread)]
+                    for (_, grid) in &grids[i * (grids.len() / num_thread)
+                        ..if i == num_thread - 1 {
+                            grids.len()
+                        } else {
+                            (i + 1) * (grids.len() / num_thread)
+                        }]
                     {
                         for _ in 0..children_size {
                             let mut child = grid.clone();
-                            let n = dist.sample(&mut rng);
+                            let n = 1 + dist.sample(&mut rng);
                             for _ in 0..n {
                                 let i = rng.gen_range(0..D);
                                 let j = rng.gen_range(0..D);
-                                child[i][j] = rng.gen_range(0..=8);
+                                let c = rng.gen_range(1..=8);
+                                child[i][j] += c;
+                                child[i][j] %= 9;
                             }
                             children.push((simulate(child.clone()), child));
                         }
@@ -199,17 +216,20 @@ fn main() {
         }
 
         children.sort_unstable_by_key(|&((k, c), _)| (usize::MAX - k, usize::MAX - c));
-        children.dedup_by_key(|&mut (k, _)| k);
+        children.dedup_by_key(|&mut ((k, _), _)| k);
         // children.dedup();
         children.truncate(gen_size);
 
         grids = children.into();
 
+        println!("start");
         print!("{}", to_string(&grids[0]));
         print!("{}", to_string(&grids[grids.len() - 1]));
 
+        println!("{count}");
+
         count += 1;
-        if count % 50 == 0 {
+        if count % 2 == 0 {
             fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
         }
     }
