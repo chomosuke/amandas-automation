@@ -1,4 +1,10 @@
-#![allow(unused_imports, dead_code, clippy::needless_range_loop, unused_labels)]
+#![allow(
+    unused_imports,
+    dead_code,
+    clippy::needless_range_loop,
+    unused_labels,
+    clippy::comparison_chain
+)]
 use std::{
     cmp::{max, min, Ordering},
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
@@ -13,13 +19,14 @@ use std::{
 
 use rand::{distributions::Bernoulli, random, thread_rng, Rng};
 
-fn simulate(mut grid: Vec<Vec<u8>>) -> usize {
-    // let mut pos = vec![vec![false; 21]; 21];
-    let mut i = 10i64;
-    let mut j = 10i64;
+fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
+    // let mut pos = vec![vec![false; D]; D];
+    let mut i = D as i64 / 2;
+    let mut j = D as i64 / 2;
     let mut dir = 1;
     let mut count = 0;
-    while i >= 0 && j >= 0 && i < 21 && j < 21 {
+    let mut center = 0;
+    while i >= 0 && j >= 0 && i < D as i64 && j < D as i64 {
         // pos[i as usize][j as usize] = true;
 
         let cur = grid[i as usize][j as usize];
@@ -64,22 +71,59 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> usize {
         }
 
         count += 1;
+        if i == D as i64 / 2 && j == D as i64 / 2 {
+            center += 1;
+        }
     }
-    count
+    (count, center)
 }
 
+const D: usize = 21;
+
 fn main() {
-    let mut sc = Scanner::new(stdin());
-    let gen_size = sc.next::<usize>();
-    let children_size = sc.next::<usize>();
-    let probability = sc.next::<f64>();
-    let dist = Binomial::new(21 * 21, probability).unwrap();
+    // let mut sc = Scanner::new(stdin());
+    let gen_size = 100; //sc.next::<usize>();
+    let children_size = 100; //sc.next::<usize>();
+    let probability = 0.01; //sc.next::<f64>();
+    let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
     let mut rng = thread_rng();
     let mut grids = Arc::new(
         (0..gen_size)
             .map(|_| {
-                let g = (0..21)
-                    .map(|_| (0..21).map(|_| rng.gen_range(0..=8u8)).collect::<Vec<_>>())
+                let g = (0..D)
+                    .map(|i| {
+                        (0..D)
+                            .map(|j| {
+                                let j = if j > D / 2 {
+                                    -rng.gen_range(0..=1)
+                                } else if j < D / 2 {
+                                    rng.gen_range(0..=1)
+                                } else {
+                                    0
+                                };
+                                let i = if i > D / 2 {
+                                    -rng.gen_range(0..=1)
+                                } else if i < D / 2 {
+                                    rng.gen_range(0..=1)
+                                } else {
+                                    0
+                                };
+
+                                match (i, j) {
+                                    (0, 0) => 0,
+                                    (0, 1) => 1,
+                                    (1, 1) => 2,
+                                    (1, 0) => 3,
+                                    (1, -1) => 4,
+                                    (0, -1) => 5,
+                                    (-1, -1) => 6,
+                                    (-1, 0) => 7,
+                                    (-1, 1) => 8,
+                                    _ => panic!(),
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
                     .collect::<Vec<_>>();
                 (simulate(g.clone()), g)
             })
@@ -102,8 +146,8 @@ fn main() {
                             let mut child = grid.clone();
                             let n = dist.sample(&mut rng);
                             for _ in 0..n {
-                                let i = rng.gen_range(0..21);
-                                let j = rng.gen_range(0..21);
+                                let i = rng.gen_range(0..D);
+                                let j = rng.gen_range(0..D);
                                 child[i][j] = rng.gen_range(0..=8);
                             }
                             children.push((simulate(child.clone()), child));
@@ -119,21 +163,21 @@ fn main() {
             children.append(&mut h.join().unwrap());
         }
 
-        children.sort_unstable_by_key(|&(k, _)| usize::MAX - k);
-        // children.dedup_by_key(|&mut (k, _)| k);
-        children.dedup();
+        children.sort_unstable_by_key(|&((k, c), _)| (usize::MAX - k, usize::MAX - c));
+        children.dedup_by_key(|&mut (k, _)| k);
+        // children.dedup();
         children.truncate(gen_size);
 
         grids = children.into();
 
-        println!("{}", (grids[0].0));
+        println!("{}", grids[0].0 .0);
         for row in &(grids[0].1) {
             for cell in row {
                 print!("{cell}");
             }
             println!();
         }
-        println!("{}", (grids[grids.len() - 1].0));
+        println!("{}", grids[grids.len() - 1].0 .0);
         for row in &(grids[grids.len() - 1].1) {
             for cell in row {
                 print!("{cell}");
