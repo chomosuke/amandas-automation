@@ -19,7 +19,7 @@ use std::{
     thread, usize,
 };
 
-use rand::{distributions::Bernoulli, random, thread_rng, Rng};
+use rand::{distributions::Bernoulli, random, seq::SliceRandom, thread_rng, Rng};
 
 fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
     // let mut pos = vec![vec![false; D]; D];
@@ -74,7 +74,7 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
 
         count += 1;
         // center += 10 - (i - D as i64 / 2).abs() - (j - D as i64 / 2).abs();
-        if (i - D as i64 / 2).abs() < 2 && (j - D as i64 / 2).abs() < 2 {
+        if (i - D as i64 / 2).abs() + (j - D as i64 / 2).abs() < 1 {
             center += 1;
         }
     }
@@ -96,18 +96,13 @@ fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
 }
 
 fn main() {
-    // let mut sc = Scanner::new(stdin());
-    // let gen_size = 5000;
-    let children_size = 5;
+    let children_size = 1;
     let probability = 0.001;
     let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
-    // let l_gen_size = 1000;
-    // let l_children_size = 10;
-    // let l_probability = 0.01;
-    // let l_dist = Binomial::new(D as u64 * D as u64, l_probability).unwrap();
+
     let saved = "saved.txt";
+    let mut rng = thread_rng();
     if !Path::new(saved).exists() {
-        let mut rng = thread_rng();
         let grids = Arc::new(
             (0..100)
                 .map(|_| {
@@ -172,13 +167,7 @@ fn main() {
 
     let mut count = 0;
     loop {
-        // let l = (count / 100) % 2 == 0;
-        // let children_size = if l { l_children_size } else { children_size };
-        // let gen_size = if l { l_gen_size } else { gen_size };
-        // let dist = if l { l_dist } else { dist };
-        // println!("{}", dist.sample(&mut thread_rng()));
-
-        let gen_size = grids[0].0.0 / 6;
+        let gen_size = grids[0].0 .0 / 16;
         let gen_size = gen_size.max(100);
 
         // generate the children
@@ -215,15 +204,20 @@ fn main() {
             .collect::<Vec<_>>();
 
         let mut children = Vec::clone(&grids);
-        // let mut children = Vec::new();
         for h in handles {
             children.append(&mut h.join().unwrap());
         }
 
-        children.sort_unstable_by_key(|&((k, c), _)| (usize::MAX - k, usize::MAX - c));
+        children.sort_unstable_by_key(|&((k, _c), _)| {
+            (
+                usize::MAX - k, //
+                usize::MAX - _c,
+            )
+        });
         children.dedup_by_key(|&mut ((k, _), _)| k);
-        // children.dedup();
         children.truncate(gen_size);
+        let most = children[0].0 .0;
+        children.retain(|&((k, _), _)| most - k < 100 || rng.gen_range(0..3) != 0);//rng.gen_range(0..most) < k);
 
         grids = children.into();
 
@@ -231,10 +225,10 @@ fn main() {
         print!("{}", to_string(&grids[0]));
         print!("{}", to_string(&grids[grids.len() - 1]));
 
-        println!("{count}");
+        println!("{count} {}", grids.len());
 
         count += 1;
-        if count % 2 == 0 {
+        if count % 20 == 0 {
             fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
         }
     }
