@@ -83,13 +83,13 @@ fn simulate(mut grid: Vec<Vec<u8>>) -> (usize, usize) {
 
 const D: usize = 21;
 
-fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
-    let mut str = format!("{} {}", grid.0 .0, grid.0 .1).into_bytes();
-    for row in &grid.1 {
-        str.push(b'\n');
+fn to_string(grid: &Vec<Vec<u8>>) -> String {
+    let mut str = Vec::with_capacity(D * D);
+    for row in grid {
         for cell in row {
             str.push(cell + b'0');
         }
+        str.push(b'\n');
     }
     str.push(b'\n');
     String::from_utf8(str).unwrap()
@@ -97,8 +97,6 @@ fn to_string(grid: &((usize, usize), Vec<Vec<u8>>)) -> String {
 
 fn main() {
     let children_size = 1;
-    let probability = 0.001;
-    let dist = Binomial::new(D as u64 * D as u64, probability).unwrap();
 
     let saved = "saved.txt";
     let mut rng = thread_rng();
@@ -145,33 +143,34 @@ fn main() {
                 })
                 .collect::<Vec<_>>(),
         );
-        fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
+        fs::write(
+            saved,
+            grids.iter().map(|(_, g)| to_string(g)).collect::<String>(),
+        )
+        .unwrap();
     }
     let grids = fs::read_to_string(saved).unwrap();
     let mut grids = grids.split('\n').collect::<Vec<_>>();
     grids.pop();
-    let grids: Vec<((usize, usize), Vec<Vec<u8>>)> = grids
-        .chunks(22)
+    let grids = grids
+        .chunks(D + 1)
         .map(|ls| {
-            let mut s = ls[0].split(' ');
-            let n = s.next().unwrap().parse().unwrap();
-            let c = s.next().unwrap().parse().unwrap();
-            let grid = ls[1..22]
+            let grid: Vec<Vec<u8>> = ls[0..D]
                 .iter()
                 .map(|l| l.as_bytes().iter().map(|&c| c - b'0').collect())
                 .collect();
-            ((n, c), grid)
+            (simulate(grid.clone()), grid)
         })
-        .collect();
+        .collect::<Vec<_>>();
     let mut grids = Arc::new(grids);
 
     let mut count = 0;
     loop {
-        let gen_size = grids[0].0 .0 / 16;
+        let gen_size = grids[0].0 .0 / 64;
         let gen_size = gen_size.max(100);
 
         // generate the children
-        let num_thread = 8;
+        let num_thread = 6;
         let handles = (0..num_thread)
             .map(|i| {
                 let grids = Arc::clone(&grids);
@@ -187,14 +186,11 @@ fn main() {
                     {
                         for _ in 0..children_size {
                             let mut child = grid.clone();
-                            let n = 1 + dist.sample(&mut rng);
-                            for _ in 0..n {
-                                let i = rng.gen_range(0..D);
-                                let j = rng.gen_range(0..D);
-                                let c = rng.gen_range(1..=8);
-                                child[i][j] += c;
-                                child[i][j] %= 9;
-                            }
+                            let i = rng.gen_range(0..D);
+                            let j = rng.gen_range(0..D);
+                            let c = rng.gen_range(1..=8);
+                            child[i][j] += c;
+                            child[i][j] %= 9;
                             children.push((simulate(child.clone()), child));
                         }
                     }
@@ -203,33 +199,41 @@ fn main() {
             })
             .collect::<Vec<_>>();
 
-        let mut children = Vec::clone(&grids);
+        let mut children = Vec::new();
         for h in handles {
             children.append(&mut h.join().unwrap());
         }
+        children.extend((*grids).iter().cloned());
 
         children.sort_unstable_by_key(|&((k, _c), _)| {
             (
                 usize::MAX - k, //
-                usize::MAX - _c,
+                                // usize::MAX - _c,
             )
         });
         children.dedup_by_key(|&mut ((k, _), _)| k);
         children.truncate(gen_size);
         let most = children[0].0 .0;
-        children.retain(|&((k, _), _)| most - k < 100 || rng.gen_range(0..3) != 0);//rng.gen_range(0..most) < k);
+        let diff = most - children[children.len() - 1].0 .0;
+        children.retain(|&((k, _), _)| rng.gen_range((most - (diff * 2).min(most))..=most) <= k);
 
         grids = children.into();
 
         println!("start");
-        print!("{}", to_string(&grids[0]));
-        print!("{}", to_string(&grids[grids.len() - 1]));
+        println!("{:?}", grids[0].0);
+        print!("{}", to_string(&grids[0].1));
+        println!("{:?}", grids[grids.len() - 1].0);
+        print!("{}", to_string(&grids[grids.len() - 1].1));
 
         println!("{count} {}", grids.len());
 
         count += 1;
         if count % 20 == 0 {
-            fs::write(saved, grids.iter().map(to_string).collect::<String>()).unwrap();
+            fs::write(
+                saved,
+                grids.iter().map(|(_, g)| to_string(g)).collect::<String>(),
+            )
+            .unwrap();
         }
     }
 }
